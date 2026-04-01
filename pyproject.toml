@@ -1,0 +1,14 @@
+[project]
+name = "flowautomate-task"
+version = "0.1.0"
+description = "FastAPI backend scaffold for websocket chat application"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+	"fastapi>=0.116.1",
+	"pydantic>=2.11.7",
+	"uvicorn>=0.35.0",
+]
+
+[project.scripts]
+chat-backend = "main:main"
