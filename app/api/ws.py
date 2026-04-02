@@ -4,13 +4,17 @@ from app.schemas.events import WsMessage
 from pydantic import ValidationError
 from app.models.membership import GroupRole
 from app.services.authorization import can_send_message
+from app.realtime.connection_manager import ConnectionManager
+
 router = APIRouter()
 
 TEMP_SERVER_ROLE = GroupRole.WRITE
+connection_manager = ConnectionManager()
 
 @router.websocket("/ws/{room_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str) -> None:
     await websocket.accept()
+    connection_manager.connect(room_id, websocket)
     await websocket.send_json({
         "event": "system.connected",
         "room_id": room_id,
@@ -43,14 +47,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str) -> None:
                 continue
             
             response = await event_dispatch(message)
-            await websocket.send_json(response)
+            if response is not None:
+                await websocket.send_json(response)
     except WebSocketDisconnect:
         return 
     
     finally:
-        await websocket.close()
+        connection_manager.disconnect(room_id, websocket)
 
-async def handle_message_send(data: WsMessage) -> dict[str, Any]:
+async def handle_message_send(data: WsMessage) -> dict[str, Any] | None:
     if not can_send_message(TEMP_SERVER_ROLE):
         return build_error_response(
             room_id=data.room_id,
@@ -68,17 +73,21 @@ async def handle_message_send(data: WsMessage) -> dict[str, Any]:
             message="payload.text is required and cannot be empty"
         )
 
-    return {
-            "event": "message.receive",
-            "room_id": data.room_id,
-            "payload": {
-                "text": text.strip()
-            }
+    outgoing_message = {
+        "event": "message.receive",
+        "room_id": data.room_id,
+        "payload": {
+            "text": text.strip()
         }
+    }
+
+    await connection_manager.broadcast(data.room_id, outgoing_message)
+    return None
     
-async def event_dispatch(data: WsMessage) -> dict[str, Any]:
+async def event_dispatch(data: WsMessage) -> dict[str, Any] | None:
     if data.event == "message.send":
         return await handle_message_send(data)
+
     return build_error_response(
         room_id=data.room_id,
         code="unsupported_event",
