@@ -1,9 +1,10 @@
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from uuid import UUID
 
 from app.models.group import Group
-from app.models.message import Message
+from app.models.message import Message, MessageType
 from app.models.user import User
 
 
@@ -12,29 +13,67 @@ async def save_message(
     *,
     room_id: str,
     sender_external_id: str,
-    text: str,
+    text: str | None = None,
+    message_type: MessageType | None = None,
+    attachment_id: str | UUID | None = None,
 ) -> Message:
-    #get group if it exits
+    """Save a message to the database.
+    
+    Args:
+        db: DB session
+        room_id: Room ID (group name)
+        sender_external_id: External user ID of sender
+        text: Message text (for TEXT messages)
+        message_type: MessageType enum (TEXT or ATTACHMENT)
+        attachment_id: UUID of attachment (for ATTACHMENT messages)
+        
+    Returns:
+        Saved Message object
+        
+    Raises:
+        ValueError: If room or user not found, or invalid message type
+    """
+    
+    # Default to TEXT if not specified
+    if message_type is None:
+        message_type = MessageType.TEXT
+    
+    # Validate message type and content
+    if message_type == MessageType.TEXT and not text:
+        raise ValueError("text is required for TEXT messages")
+    
+    if message_type == MessageType.ATTACHMENT and not attachment_id:
+        raise ValueError("attachment_id is required for ATTACHMENT messages")
+    
+    # Get group
     group = await db.scalar(select(Group).where(Group.name == room_id))
     if group is None:
         raise ValueError("room_not_found")
 
-    #get user/sender if it exits
+    # Get user/sender
     sender = await db.scalar(select(User).where(User.external_id == sender_external_id))
     if sender is None:
         raise ValueError("user_not_found")
 
-    #save the message
+    # Convert attachment_id to UUID if it's a string
+    if attachment_id and isinstance(attachment_id, str):
+        try:
+            attachment_id = UUID(attachment_id)
+        except (ValueError, TypeError):
+            raise ValueError("invalid_attachment_id")
+
+    # Save the message
     msg = Message(
         group_id=group.id,
         sender_user_id=sender.id,
-        text=text.strip(),
+        text=text.strip() if text else None,
+        message_type=message_type,
+        attachment_id=attachment_id,
     )
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
 
-    #return the msg
     return msg
 
 # ...existing code...

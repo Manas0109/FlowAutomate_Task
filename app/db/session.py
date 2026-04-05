@@ -8,6 +8,10 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     future=True,
+    pool_pre_ping=True,  # Verify connections before using them
+    pool_size=20,  # Number of connections to keep in the pool
+    max_overflow=10,  # Allow temporary overflow beyond pool_size
+    pool_recycle=3600,  # Recycle connections after 1 hour
 )
 
 SessionLocal = async_sessionmaker(
@@ -24,7 +28,15 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def get_db() -> AsyncSession:
-    """Get a database session (for direct use in non-FastAPI code like WebSocket)."""
+    """Get a database session (for direct use in non-FastAPI code like WebSocket).
+    
+    Close this session when done using it:
+       db = await get_db()
+       try:
+           # ... use db ...
+       finally:
+           await db.close()
+    """
     return SessionLocal()
 
 

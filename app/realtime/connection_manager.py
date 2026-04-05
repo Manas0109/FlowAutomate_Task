@@ -20,11 +20,18 @@ class ConnectionManager:
         if not room_connections and room_id in self._rooms:
             del self._rooms[room_id]
 
-    async def broadcast(self, room_id: str, message: dict[str, Any]) -> None:
+    async def broadcast(
+        self,
+        room_id: str,
+        message: dict[str, Any],
+        exclude: WebSocket | None = None,
+    ) -> None:
         room_connections = list(self._rooms.get(room_id, []))
         stale: list[WebSocket] = []
 
         for connection in room_connections:
+            if exclude is not None and connection is exclude:
+                continue
             try:
                 await connection.send_json(message)
             except Exception:
